@@ -1,0 +1,682 @@
+{
+  "updatedAt": "2026-05-13T14:55:43.275Z",
+  "createdAt": "2026-05-12T22:31:31.524Z",
+  "id": "Fbf0OUNIfrXOQmNP",
+  "name": "Podcast Processor",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "podcast-processor",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "webhookId": "17a8c68d-6d0f-4dbd-ad6c-a1f22d03008d"
+    },
+    {
+      "id": "node-readfile",
+      "name": "Read Audio File",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "parameters": {
+        "filePath": "C:\\Users\\Admin\\.n8n-files\\podcast.mp3"
+      }
+    },
+    {
+      "id": "node-groq",
+      "name": "Groq Whisper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_GROQ_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 480000
+    },
+    {
+      "id": "node-set",
+      "name": "Store Transcription",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-transcription",
+              "name": "transcription",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "field-url",
+              "name": "youtube_url",
+              "value": "={{ $('Webhook').item.json.body.url }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "node-code-download",
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst url = $input.item.json.body.url;\n\nif (!url) throw new Error('URL não informada no body');\n\nconst out = 'C:\\\\Users\\\\Admin\\\\.n8n-files\\\\podcast.mp3';\nconst tmp = 'C:\\\\Users\\\\Admin\\\\.n8n-files\\\\podcast_tmp.mp3';\n\n// Download\nexecSync(`yt-dlp -x --audio-format mp3 --audio-quality 0 -o \"${out}\" \"${url}\"`, { stdio: 'inherit' });\n\n// Groq limit = 25 MB. Re-encode to lower bitrate if needed.\nconst sizeMB = fs.statSync(out).size / (1024 * 1024);\nif (sizeMB > 24) {\n  const bitrate = sizeMB > 50 ? '16k' : '32k';\n  execSync(`ffmpeg -y -i \"${out}\" -b:a ${bitrate} -ac 1 \"${tmp}\"`, { stdio: 'inherit' });\n  fs.renameSync(tmp, out);\n}\n\nreturn [{ json: { status: 'downloaded', youtube_url: url } }];"
+      }
+    },
+    {
+      "id": "node-claude",
+      "name": "Claude Synthesis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "YOUR_ANTHROPIC_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:'claude-sonnet-4-6',max_tokens:16000,system:'Você é um especialista em síntese de conteúdo para aprendizado acelerado. Sua missão é transformar uma transcrição de podcast em um documento tão rico e denso que o leitor não precise ouvir o áudio original.\\n\\nPRINCÍPIOS FUNDAMENTAIS:\\n- Seja ESPECÍFICO. Cite exemplos concretos, números, nomes, situações reais mencionadas no episódio.\\n- Extraia FRASES LITERAIS dos participantes — as mais impactantes, reveladoras ou contraintuitivas.\\n- Explore cada tema em PROFUNDIDADE real, não apenas liste-os.\\n- O documento deve substituir completamente a necessidade de ouvir o áudio.\\n\\nRetorne EXATAMENTE nesta estrutura markdown:\\n\\n**CONTEXTO**\\nQuem são os participantes (nome, área de atuação, por que são relevantes) e qual o tema central. O que motivou essa conversa. (2-3 parágrafos densos)\\n\\n---\\n\\n**MOMENTOS E CITAÇÕES MARCANTES**\\nAs 5-8 falas mais impactantes do episódio, transcritas o mais literalmente possível. Para cada uma:\\n\\n> *Fala literal ou quase-literal do participante* — Nome do participante\\n\\nExplique em 2-3 linhas o contexto dessa fala e por que ela é relevante, surpreendente ou reveladora.\\n\\n---\\n\\n**TEMAS DISCUTIDOS EM PROFUNDIDADE**\\nPara cada tema principal, escreva um bloco completo com mínimo 5-7 linhas. Inclua exemplos concretos, dados citados, casos reais e as nuances do argumento:\\n\\n- **Nome do tema:** Desenvolvimento detalhado. O que foi dito exatamente, com que argumentos, quais exemplos foram usados, o que ficou implícito ou surpreendente.\\n\\n---\\n\\n**CONCLUSÕES E INSIGHTS NÃO ÓBVIOS**\\nO que contradiz o senso comum. O que foi revelador, surpreendente ou contraintuitivo. Não repita o óbvio — vá fundo no que diferencia esse episódio. (3-4 parágrafos densos)\\n\\n---\\n\\n**APRENDIZADOS PRÁTICOS E APLICÁVEIS**\\nO que o leitor pode fazer diferente a partir de hoje. Seja extremamente específico:\\n\\n- **Aprendizado:** Descrição do que fazer, como fazer, quando aplicar e por que funciona. Use exemplos do próprio episódio.\\n\\n---\\n\\n**PERGUNTAS QUE ESSE PODCAST RESPONDE**\\nDe 8 a 12 perguntas em formato FAQ com respostas completas e detalhadas. Mínimo 4-5 linhas por resposta:\\n\\n**Pergunta objetiva e direta?**\\nResposta detalhada com exemplos, contexto e nuances extraídas do episódio.\\n\\n---\\n\\n**FRASE DO EPISÓDIO**\\nUma única frase que captura a essência transformadora de tudo que foi discutido.\\n\\n---\\n\\n**PAUTA PARA CUMBUCA**\\nMaterial para debate em grupo de estudos. Use listas com marcadores (-) em todos os itens:\\n\\n**Perguntas para debate:**\\n- Pergunta aberta e provocativa baseada no episódio (4-5 perguntas)\\n\\n**Provocações:**\\n- Afirmação contraintuitiva ou polêmica extraída do episódio (3-4 provocações)\\n\\n**Frases marcantes:**\\n> *Frase literal impactante do episódio* — Nome de quem disse\\n\\n**Aprendizados e aplicações práticas para o grupo:**\\n- Ação concreta que o grupo pode tentar ou experimentar (3-4 itens)\\n\\n**Para levar na memória:**\\nUma síntese do que cada membro deveria sair sabendo após discutir esse episódio no grupo.',messages:[{role:'user',content:'Aqui está a transcrição do podcast:\\n\\n'+$json.transcription}]}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-summary",
+      "name": "Store Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1880,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "summary",
+              "value": "={{ $json.content[0].text }}",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "youtube_url",
+              "value": "={{ $('Store Transcription').item.json.youtube_url }}",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "transcription",
+              "value": "={{ $('Store Transcription').item.json.transcription }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a2723ab5-7ba0-4629-b89d-0c836eb08428",
+      "name": "Save to Notion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const https = require('https');\nconst summary = $input.item.json.summary;\nconst youtubeUrl = $input.item.json.youtube_url;\n\n// Extract FRASE DO EPISÓDIO - grab first content line after section header\nlet titulo = 'Podcast Processado';\nconst epIdx = summary.search(/FRASE DO EPIS/i);\nif (epIdx !== -1) {\n  const afterFrase = summary.substring(epIdx);\n  for (const line of afterFrase.split('\\n')) {\n    const t = line.trim();\n    if (!t || t.match(/FRASE DO EPIS/i) || t.match(/^---/)) continue;\n    const clean = t.replace(/^>\\s*/, '').replace(/\\*/g, '')\n                    .replace(/^\"+/, '').replace(/\"+$/, '')\n                    .replace(/\\s*—.*$/, '').trim();\n    if (clean.length > 10) { titulo = clean; break; }\n  }\n}\n\n// Extract TEMAS DISCUTIDOS bullet topics\nconst temas = [];\nconst temasMatch = summary.match(/\\*\\*TEMAS DISCUTIDOS[^*]*\\*\\*([\\s\\S]*?)\\*\\*CONCLUSÕES/);\nif (temasMatch) {\n  for (const m of temasMatch[1].matchAll(/- \\*\\*([^*:]+)/g)) {\n    temas.push({ name: m[1].trim().replace(/,/g, ' e') });\n  }\n}\n\n// YouTube thumbnail\nconst vidMatch = youtubeUrl.match(/[?&]v=([^&\\s]+)/);\nconst videoId = vidMatch ? vidMatch[1] : '';\n\nfunction parseInline(txt) {\n  const parts = [];\n  const re = /\\*\\*(.+?)\\*\\*|\\*([^*\\n]+)\\*/g;\n  let last = 0, m;\n  while ((m = re.exec(txt)) !== null) {\n    if (m.index > last) parts.push({ type: 'text', text: { content: txt.slice(last, m.index) } });\n    if (m[1] !== undefined) {\n      parts.push({ type: 'text', text: { content: m[1] }, annotations: { bold: true } });\n    } else {\n      parts.push({ type: 'text', text: { content: m[2] }, annotations: { italic: true } });\n    }\n    last = m.index + m[0].length;\n  }\n  if (last < txt.length) parts.push({ type: 'text', text: { content: txt.slice(last) } });\n  return parts.length ? parts : [{ type: 'text', text: { content: txt } }];\n}\n\nfunction mdToBlocks(md) {\n  const blocks = [];\n  const lines = md.split('\\n');\n  let i = 0;\n  while (i < lines.length) {\n    const t = lines[i].trim();\n    if (!t) { i++; continue; }\n    if (t === '---') { blocks.push({ object: 'block', type: 'divider', divider: {} }); i++; continue; }\n    if (/^\\*\\*[^*]+\\*\\*$/.test(t)) {\n      const txt = t.slice(2, -2);\n      const hType = txt === txt.toUpperCase() ? 'heading_2' : 'heading_3';\n      blocks.push({ object: 'block', type: hType, [hType]: { rich_text: [{ type: 'text', text: { content: txt } }] } });\n      i++; continue;\n    }\n    if (t.startsWith('- ')) { blocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: parseInline(t.slice(2)) } }); i++; continue; }\n    if (t.startsWith('> ')) {\n      blocks.push({ object: 'block', type: 'quote', quote: { rich_text: parseInline(t.slice(2)) } });\n      i++; continue;\n    }\n    const paraLines = [];\n    while (i < lines.length) {\n      const pt = lines[i].trim();\n      if (!pt || pt === '---' || /^\\*\\*[^*]+\\*\\*$/.test(pt) || pt.startsWith('- ') || pt.startsWith('> ')) break;\n      paraLines.push(pt); i++;\n    }\n    const paraText = paraLines.join(' ');\n    for (let s = 0; s < paraText.length || s === 0; s += 1900) {\n      const chunk = paraText.slice(s, s + 1900);\n      if (chunk) blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: parseInline(chunk) } });\n    }\n  }\n  return blocks;\n}\n\nconst children = [];\nif (videoId) {\n  children.push({ object: 'block', type: 'image', image: { type: 'external', external: { url: `https://img.youtube.com/vi/${videoId}/0.jpg` } } });\n}\nchildren.push(...mdToBlocks(summary));\n\nconst body = {\n  parent: { database_id: 'YOUR_NOTION_DATABASE_ID' },\n  properties: {\n    'Título': { title: [{ text: { content: titulo.substring(0, 2000) } }] },\n    'URL do YouTube': { url: youtubeUrl },\n    'Data de Processamento': { date: { start: new Date().toISOString().split('T')[0] } },\n    'Temas Principais': { multi_select: temas.slice(0, 10) },\n    'Status': { select: { name: 'Processado' } }\n  },\n  children: children.slice(0, 100)\n};\n\nfunction notionReq(method, path, reqBody) {\n  return new Promise((resolve, reject) => {\n    const bodyStr = JSON.stringify(reqBody);\n    const opts = {\n      hostname: 'api.notion.com', port: 443, path, method,\n      headers: {\n        'Authorization': 'Bearer YOUR_NOTION_TOKEN',\n        'Content-Type': 'application/json',\n        'Notion-Version': '2022-06-28',\n        'Content-Length': Buffer.byteLength(bodyStr)\n      }\n    };\n    const req = https.request(opts, (res) => {\n      let raw = '';\n      res.on('data', c => raw += c);\n      res.on('end', () => {\n        const parsed = JSON.parse(raw);\n        if (res.statusCode < 200 || res.statusCode >= 300)\n          reject(new Error(`Notion error ${res.statusCode}: ${JSON.stringify(parsed)}`));\n        else resolve(parsed);\n      });\n    });\n    req.on('error', reject);\n    req.write(bodyStr);\n    req.end();\n  });\n}\n\nconst page = await notionReq('POST', '/v1/pages', body);\n\nfor (let i = 100; i < children.length; i += 100) {\n  await notionReq('PATCH', `/v1/blocks/${page.id}/children`, { children: children.slice(i, i + 100) });\n}\n\nreturn [{ json: {\n  notion_page_id: page.id,\n  notion_url: page.url,\n  titulo,\n  temas: temas.map(t => t.name),\n  youtube_url: youtubeUrl,\n  status: 'Processado'\n} }];"
+      }
+    },
+    {
+      "id": "baa860ba-6af9-4136-94a7-ffd5d814d030",
+      "name": "Cleanup Audio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const fs = require('fs');\ntry { fs.unlinkSync('C:\\\\Users\\\\Admin\\\\.n8n-files\\\\podcast.mp3'); } catch(e) {}\nreturn [{ json: $input.item.json }];"
+      }
+    }
+  ],
+  "connections": {
+    "Read Audio File": {
+      "main": [
+        [
+          {
+            "node": "Groq Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Whisper": {
+      "main": [
+        [
+          {
+            "node": "Store Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Download Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio": {
+      "main": [
+        [
+          {
+            "node": "Read Audio File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Transcription": {
+      "main": [
+        [
+          {
+            "node": "Claude Synthesis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Synthesis": {
+      "main": [
+        [
+          {
+            "node": "Store Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Summary": {
+      "main": [
+        [
+          {
+            "node": "Save to Notion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Notion": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "errorWorkflow": "sQQEN2wPGYUXE3PO"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "6d2ac032-a5ac-4776-8f15-710bf6e5b8b5",
+  "activeVersionId": "6d2ac032-a5ac-4776-8f15-710bf6e5b8b5",
+  "versionCounter": 65,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-05-12T22:31:31.531Z",
+      "createdAt": "2026-05-12T22:31:31.531Z",
+      "role": "workflow:owner",
+      "workflowId": "Fbf0OUNIfrXOQmNP",
+      "projectId": "FkvsRLC5dj6hsXux",
+      "project": {
+        "updatedAt": "2026-05-12T21:03:58.126Z",
+        "createdAt": "2026-05-12T21:03:29.581Z",
+        "id": "FkvsRLC5dj6hsXux",
+        "name": "Wendel Bitencourt <wendelmariano@hotmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "cb7c87ae-9aef-4915-85b8-5217d0e9ed98"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-05-13T14:55:43.272Z",
+    "createdAt": "2026-05-13T14:55:43.272Z",
+    "versionId": "6d2ac032-a5ac-4776-8f15-710bf6e5b8b5",
+    "workflowId": "Fbf0OUNIfrXOQmNP",
+    "nodes": [
+      {
+        "id": "node-webhook",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          200,
+          300
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "podcast-processor",
+          "responseMode": "lastNode",
+          "options": {}
+        },
+        "webhookId": "17a8c68d-6d0f-4dbd-ad6c-a1f22d03008d"
+      },
+      {
+        "id": "node-readfile",
+        "name": "Read Audio File",
+        "type": "n8n-nodes-base.readBinaryFile",
+        "typeVersion": 1,
+        "position": [
+          760,
+          300
+        ],
+        "parameters": {
+          "filePath": "C:\\Users\\Admin\\.n8n-files\\podcast.mp3"
+        }
+      },
+      {
+        "id": "node-groq",
+        "name": "Groq Whisper",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1040,
+          300
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer YOUR_GROQ_API_KEY"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formBinaryData",
+                "name": "file",
+                "inputDataFieldName": "data"
+              },
+              {
+                "name": "model",
+                "value": "whisper-large-v3"
+              },
+              {
+                "name": "response_format",
+                "value": "json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 480000
+      },
+      {
+        "id": "node-set",
+        "name": "Store Transcription",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          1320,
+          300
+        ],
+        "parameters": {
+          "mode": "manual",
+          "assignments": {
+            "assignments": [
+              {
+                "id": "field-transcription",
+                "name": "transcription",
+                "value": "={{ $json.text }}",
+                "type": "string"
+              },
+              {
+                "id": "field-url",
+                "name": "youtube_url",
+                "value": "={{ $('Webhook').item.json.body.url }}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "node-code-download",
+        "name": "Download Audio",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          300
+        ],
+        "parameters": {
+          "language": "javaScript",
+          "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst url = $input.item.json.body.url;\n\nif (!url) throw new Error('URL não informada no body');\n\nconst out = 'C:\\\\Users\\\\Admin\\\\.n8n-files\\\\podcast.mp3';\nconst tmp = 'C:\\\\Users\\\\Admin\\\\.n8n-files\\\\podcast_tmp.mp3';\n\n// Download\nexecSync(`yt-dlp -x --audio-format mp3 --audio-quality 0 -o \"${out}\" \"${url}\"`, { stdio: 'inherit' });\n\n// Groq limit = 25 MB. Re-encode to lower bitrate if needed.\nconst sizeMB = fs.statSync(out).size / (1024 * 1024);\nif (sizeMB > 24) {\n  const bitrate = sizeMB > 50 ? '16k' : '32k';\n  execSync(`ffmpeg -y -i \"${out}\" -b:a ${bitrate} -ac 1 \"${tmp}\"`, { stdio: 'inherit' });\n  fs.renameSync(tmp, out);\n}\n\nreturn [{ json: { status: 'downloaded', youtube_url: url } }];"
+        }
+      },
+      {
+        "id": "node-claude",
+        "name": "Claude Synthesis",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1600,
+          300
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.anthropic.com/v1/messages",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-api-key",
+                "value": "YOUR_ANTHROPIC_API_KEY"
+              },
+              {
+                "name": "anthropic-version",
+                "value": "2023-06-01"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({model:'claude-sonnet-4-6',max_tokens:16000,system:'Você é um especialista em síntese de conteúdo para aprendizado acelerado. Sua missão é transformar uma transcrição de podcast em um documento tão rico e denso que o leitor não precise ouvir o áudio original.\\n\\nPRINCÍPIOS FUNDAMENTAIS:\\n- Seja ESPECÍFICO. Cite exemplos concretos, números, nomes, situações reais mencionadas no episódio.\\n- Extraia FRASES LITERAIS dos participantes — as mais impactantes, reveladoras ou contraintuitivas.\\n- Explore cada tema em PROFUNDIDADE real, não apenas liste-os.\\n- O documento deve substituir completamente a necessidade de ouvir o áudio.\\n\\nRetorne EXATAMENTE nesta estrutura markdown:\\n\\n**CONTEXTO**\\nQuem são os participantes (nome, área de atuação, por que são relevantes) e qual o tema central. O que motivou essa conversa. (2-3 parágrafos densos)\\n\\n---\\n\\n**MOMENTOS E CITAÇÕES MARCANTES**\\nAs 5-8 falas mais impactantes do episódio, transcritas o mais literalmente possível. Para cada uma:\\n\\n> *Fala literal ou quase-literal do participante* — Nome do participante\\n\\nExplique em 2-3 linhas o contexto dessa fala e por que ela é relevante, surpreendente ou reveladora.\\n\\n---\\n\\n**TEMAS DISCUTIDOS EM PROFUNDIDADE**\\nPara cada tema principal, escreva um bloco completo com mínimo 5-7 linhas. Inclua exemplos concretos, dados citados, casos reais e as nuances do argumento:\\n\\n- **Nome do tema:** Desenvolvimento detalhado. O que foi dito exatamente, com que argumentos, quais exemplos foram usados, o que ficou implícito ou surpreendente.\\n\\n---\\n\\n**CONCLUSÕES E INSIGHTS NÃO ÓBVIOS**\\nO que contradiz o senso comum. O que foi revelador, surpreendente ou contraintuitivo. Não repita o óbvio — vá fundo no que diferencia esse episódio. (3-4 parágrafos densos)\\n\\n---\\n\\n**APRENDIZADOS PRÁTICOS E APLICÁVEIS**\\nO que o leitor pode fazer diferente a partir de hoje. Seja extremamente específico:\\n\\n- **Aprendizado:** Descrição do que fazer, como fazer, quando aplicar e por que funciona. Use exemplos do próprio episódio.\\n\\n---\\n\\n**PERGUNTAS QUE ESSE PODCAST RESPONDE**\\nDe 8 a 12 perguntas em formato FAQ com respostas completas e detalhadas. Mínimo 4-5 linhas por resposta:\\n\\n**Pergunta objetiva e direta?**\\nResposta detalhada com exemplos, contexto e nuances extraídas do episódio.\\n\\n---\\n\\n**FRASE DO EPISÓDIO**\\nUma única frase que captura a essência transformadora de tudo que foi discutido.\\n\\n---\\n\\n**PAUTA PARA CUMBUCA**\\nMaterial para debate em grupo de estudos. Use listas com marcadores (-) em todos os itens:\\n\\n**Perguntas para debate:**\\n- Pergunta aberta e provocativa baseada no episódio (4-5 perguntas)\\n\\n**Provocações:**\\n- Afirmação contraintuitiva ou polêmica extraída do episódio (3-4 provocações)\\n\\n**Frases marcantes:**\\n> *Frase literal impactante do episódio* — Nome de quem disse\\n\\n**Aprendizados e aplicações práticas para o grupo:**\\n- Ação concreta que o grupo pode tentar ou experimentar (3-4 itens)\\n\\n**Para levar na memória:**\\nUma síntese do que cada membro deveria sair sabendo após discutir esse episódio no grupo.',messages:[{role:'user',content:'Aqui está a transcrição do podcast:\\n\\n'+$json.transcription}]}) }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "node-summary",
+        "name": "Store Summary",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          1880,
+          300
+        ],
+        "parameters": {
+          "mode": "manual",
+          "assignments": {
+            "assignments": [
+              {
+                "id": "f1",
+                "name": "summary",
+                "value": "={{ $json.content[0].text }}",
+                "type": "string"
+              },
+              {
+                "id": "f2",
+                "name": "youtube_url",
+                "value": "={{ $('Store Transcription').item.json.youtube_url }}",
+                "type": "string"
+              },
+              {
+                "id": "f3",
+                "name": "transcription",
+                "value": "={{ $('Store Transcription').item.json.transcription }}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "a2723ab5-7ba0-4629-b89d-0c836eb08428",
+        "name": "Save to Notion",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2160,
+          300
+        ],
+        "parameters": {
+          "jsCode": "const https = require('https');\nconst summary = $input.item.json.summary;\nconst youtubeUrl = $input.item.json.youtube_url;\n\n// Extract FRASE DO EPISÓDIO - grab first content line after section header\nlet titulo = 'Podcast Processado';\nconst epIdx = summary.search(/FRASE DO EPIS/i);\nif (epIdx !== -1) {\n  const afterFrase = summary.substring(epIdx);\n  for (const line of afterFrase.split('\\n')) {\n    const t = line.trim();\n    if (!t || t.match(/FRASE DO EPIS/i) || t.match(/^---/)) continue;\n    const clean = t.replace(/^>\\s*/, '').replace(/\\*/g, '')\n                    .replace(/^\"+/, '').replace(/\"+$/, '')\n                    .replace(/\\s*—.*$/, '').trim();\n    if (clean.length > 10) { titulo = clean; break; }\n  }\n}\n\n// Extract TEMAS DISCUTIDOS bullet topics\nconst temas = [];\nconst temasMatch = summary.match(/\\*\\*TEMAS DISCUTIDOS[^*]*\\*\\*([\\s\\S]*?)\\*\\*CONCLUSÕES/);\nif (temasMatch) {\n  for (const m of temasMatch[1].matchAll(/- \\*\\*([^*:]+)/g)) {\n    temas.push({ name: m[1].trim().replace(/,/g, ' e') });\n  }\n}\n\n// YouTube thumbnail\nconst vidMatch = youtubeUrl.match(/[?&]v=([^&\\s]+)/);\nconst videoId = vidMatch ? vidMatch[1] : '';\n\nfunction parseInline(txt) {\n  const parts = [];\n  const re = /\\*\\*(.+?)\\*\\*|\\*([^*\\n]+)\\*/g;\n  let last = 0, m;\n  while ((m = re.exec(txt)) !== null) {\n    if (m.index > last) parts.push({ type: 'text', text: { content: txt.slice(last, m.index) } });\n    if (m[1] !== undefined) {\n      parts.push({ type: 'text', text: { content: m[1] }, annotations: { bold: true } });\n    } else {\n      parts.push({ type: 'text', text: { content: m[2] }, annotations: { italic: true } });\n    }\n    last = m.index + m[0].length;\n  }\n  if (last < txt.length) parts.push({ type: 'text', text: { content: txt.slice(last) } });\n  return parts.length ? parts : [{ type: 'text', text: { content: txt } }];\n}\n\nfunction mdToBlocks(md) {\n  const blocks = [];\n  const lines = md.split('\\n');\n  let i = 0;\n  while (i < lines.length) {\n    const t = lines[i].trim();\n    if (!t) { i++; continue; }\n    if (t === '---') { blocks.push({ object: 'block', type: 'divider', divider: {} }); i++; continue; }\n    if (/^\\*\\*[^*]+\\*\\*$/.test(t)) {\n      const txt = t.slice(2, -2);\n      const hType = txt === txt.toUpperCase() ? 'heading_2' : 'heading_3';\n      blocks.push({ object: 'block', type: hType, [hType]: { rich_text: [{ type: 'text', text: { content: txt } }] } });\n      i++; continue;\n    }\n    if (t.startsWith('- ')) { blocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: parseInline(t.slice(2)) } }); i++; continue; }\n    if (t.startsWith('> ')) {\n      blocks.push({ object: 'block', type: 'quote', quote: { rich_text: parseInline(t.slice(2)) } });\n      i++; continue;\n    }\n    const paraLines = [];\n    while (i < lines.length) {\n      const pt = lines[i].trim();\n      if (!pt || pt === '---' || /^\\*\\*[^*]+\\*\\*$/.test(pt) || pt.startsWith('- ') || pt.startsWith('> ')) break;\n      paraLines.push(pt); i++;\n    }\n    const paraText = paraLines.join(' ');\n    for (let s = 0; s < paraText.length || s === 0; s += 1900) {\n      const chunk = paraText.slice(s, s + 1900);\n      if (chunk) blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: parseInline(chunk) } });\n    }\n  }\n  return blocks;\n}\n\nconst children = [];\nif (videoId) {\n  children.push({ object: 'block', type: 'image', image: { type: 'external', external: { url: `https://img.youtube.com/vi/${videoId}/0.jpg` } } });\n}\nchildren.push(...mdToBlocks(summary));\n\nconst body = {\n  parent: { database_id: 'YOUR_NOTION_DATABASE_ID' },\n  properties: {\n    'Título': { title: [{ text: { content: titulo.substring(0, 2000) } }] },\n    'URL do YouTube': { url: youtubeUrl },\n    'Data de Processamento': { date: { start: new Date().toISOString().split('T')[0] } },\n    'Temas Principais': { multi_select: temas.slice(0, 10) },\n    'Status': { select: { name: 'Processado' } }\n  },\n  children: children.slice(0, 100)\n};\n\nfunction notionReq(method, path, reqBody) {\n  return new Promise((resolve, reject) => {\n    const bodyStr = JSON.stringify(reqBody);\n    const opts = {\n      hostname: 'api.notion.com', port: 443, path, method,\n      headers: {\n        'Authorization': 'Bearer YOUR_NOTION_TOKEN',\n        'Content-Type': 'application/json',\n        'Notion-Version': '2022-06-28',\n        'Content-Length': Buffer.byteLength(bodyStr)\n      }\n    };\n    const req = https.request(opts, (res) => {\n      let raw = '';\n      res.on('data', c => raw += c);\n      res.on('end', () => {\n        const parsed = JSON.parse(raw);\n        if (res.statusCode < 200 || res.statusCode >= 300)\n          reject(new Error(`Notion error ${res.statusCode}: ${JSON.stringify(parsed)}`));\n        else resolve(parsed);\n      });\n    });\n    req.on('error', reject);\n    req.write(bodyStr);\n    req.end();\n  });\n}\n\nconst page = await notionReq('POST', '/v1/pages', body);\n\nfor (let i = 100; i < children.length; i += 100) {\n  await notionReq('PATCH', `/v1/blocks/${page.id}/children`, { children: children.slice(i, i + 100) });\n}\n\nreturn [{ json: {\n  notion_page_id: page.id,\n  notion_url: page.url,\n  titulo,\n  temas: temas.map(t => t.name),\n  youtube_url: youtubeUrl,\n  status: 'Processado'\n} }];"
+        }
+      },
+      {
+        "id": "baa860ba-6af9-4136-94a7-ffd5d814d030",
+        "name": "Cleanup Audio",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2440,
+          300
+        ],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\ntry { fs.unlinkSync('C:\\\\Users\\\\Admin\\\\.n8n-files\\\\podcast.mp3'); } catch(e) {}\nreturn [{ json: $input.item.json }];"
+        }
+      }
+    ],
+    "connections": {
+      "Read Audio File": {
+        "main": [
+          [
+            {
+              "node": "Groq Whisper",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Groq Whisper": {
+        "main": [
+          [
+            {
+              "node": "Store Transcription",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Download Audio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Download Audio": {
+        "main": [
+          [
+            {
+              "node": "Read Audio File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Store Transcription": {
+        "main": [
+          [
+            {
+              "node": "Claude Synthesis",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Claude Synthesis": {
+        "main": [
+          [
+            {
+              "node": "Store Summary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Store Summary": {
+        "main": [
+          [
+            {
+              "node": "Save to Notion",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Save to Notion": {
+        "main": [
+          [
+            {
+              "node": "Cleanup Audio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Wendel Bitencourt",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-05-13T14:55:43.339Z",
+        "id": 39,
+        "workflowId": "Fbf0OUNIfrXOQmNP",
+        "versionId": "6d2ac032-a5ac-4776-8f15-710bf6e5b8b5",
+        "event": "activated",
+        "userId": "cb7c87ae-9aef-4915-85b8-5217d0e9ed98"
+      },
+      {
+        "createdAt": "2026-05-13T14:55:43.32Z",
+        "id": 38,
+        "workflowId": "Fbf0OUNIfrXOQmNP",
+        "versionId": "6d2ac032-a5ac-4776-8f15-710bf6e5b8b5",
+        "event": "deactivated",
+        "userId": "cb7c87ae-9aef-4915-85b8-5217d0e9ed98"
+      }
+    ]
+  }
+}

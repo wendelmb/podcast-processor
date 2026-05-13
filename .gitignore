@@ -1,0 +1,12 @@
+# Claude Code internal data
+.claude/
+
+# MCP server config (contains API keys)
+.mcp.json
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Node
+node_modules/

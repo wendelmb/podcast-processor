@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Podcast Processor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d0d0d;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: #161616;
+      border: 1px solid #252525;
+      border-radius: 20px;
+      padding: 48px 40px;
+      width: 100%;
+      max-width: 500px;
+      text-align: center;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+
+    .icon { font-size: 52px; margin-bottom: 20px; line-height: 1; }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 8px;
+      letter-spacing: -0.3px;
+    }
+
+    .subtitle {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 36px;
+      line-height: 1.5;
+    }
+
+    input[type="url"] {
+      width: 100%;
+      padding: 14px 16px;
+      background: #0d0d0d;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      color: #e0e0e0;
+      font-size: 14px;
+      margin-bottom: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="url"]::placeholder { color: #444; }
+    input[type="url"]:focus { border-color: #444; }
+
+    .btn-primary {
+      width: 100%;
+      padding: 14px;
+      background: #e63946;
+      border: none;
+      border-radius: 12px;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      letter-spacing: 0.1px;
+    }
+    .btn-primary:hover { background: #c1121f; }
+    .btn-primary:active { transform: scale(0.99); }
+    .btn-primary:disabled { background: #2a2a2a; color: #555; cursor: not-allowed; transform: none; }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      color: #666;
+      font-size: 13px;
+      padding: 10px 20px;
+      cursor: pointer;
+      margin-top: 16px;
+      transition: border-color 0.2s, color 0.2s;
+      width: auto;
+    }
+    .btn-ghost:hover { border-color: #444; color: #aaa; }
+
+    /* Loading */
+    .spinner-wrap { margin-bottom: 20px; }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid #252525;
+      border-top-color: #e63946;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .step-label {
+      font-size: 15px;
+      color: #ccc;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    .timer-label { color: #444; font-size: 13px; }
+
+    .progress-bar-wrap {
+      width: 100%;
+      background: #1e1e1e;
+      border-radius: 99px;
+      height: 4px;
+      margin-top: 20px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: #e63946;
+      border-radius: 99px;
+      transition: width 1s linear;
+      width: 0%;
+    }
+
+    /* Success */
+    .success-icon { font-size: 52px; margin-bottom: 16px; }
+    .success-title { font-size: 20px; font-weight: 700; color: #4ade80; margin-bottom: 8px; }
+    .success-sub { color: #666; font-size: 14px; margin-bottom: 24px; }
+
+    .btn-notion {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 28px;
+      background: #fff;
+      color: #000;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 15px;
+      transition: background 0.15s;
+    }
+    .btn-notion:hover { background: #eee; }
+
+    /* Error */
+    .error-icon { font-size: 44px; margin-bottom: 14px; }
+    .error-title { font-size: 17px; font-weight: 600; color: #f87171; margin-bottom: 8px; }
+    .error-msg { color: #666; font-size: 13px; line-height: 1.5; margin-bottom: 4px; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- FORM -->
+    <div id="view-form">
+      <div class="icon">🎙️</div>
+      <h1>Podcast Processor</h1>
+      <p class="subtitle">Cole o link do YouTube abaixo e receba um resumo estruturado no Notion.<br><span style="font-size:12px;color:#444">Podcasts longos podem levar 3–6 minutos para processar.</span></p>
+      <input type="url" id="url-input" placeholder="https://youtube.com/watch?v=..." autofocus />
+      <button class="btn-primary" onclick="startProcessing()">Processar Podcast</button>
+    </div>
+
+    <!-- LOADING -->
+    <div id="view-loading" class="hidden">
+      <div class="spinner-wrap"><div class="spinner"></div></div>
+      <p class="step-label" id="step-text">Iniciando...</p>
+      <p class="timer-label" id="timer-text">0s</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+    </div>
+
+    <!-- SUCCESS -->
+    <div id="view-success" class="hidden">
+      <div class="success-icon">✅</div>
+      <p class="success-title">Resumo pronto!</p>
+      <p class="success-sub">O podcast foi transcrito, resumido e salvo no Notion.</p>
+      <a id="notion-link" href="#" target="_blank" class="btn-notion">
+        <span>Abrir no Notion</span>
+        <span>→</span>
+      </a>
+      <br>
+      <button class="btn-ghost" onclick="reset()">Processar outro podcast</button>
+    </div>
+
+    <!-- ERROR -->
+    <div id="view-error" class="hidden">
+      <div class="error-icon">⚠️</div>
+      <p class="error-title">Erro no processamento</p>
+      <p class="error-msg" id="error-msg"></p>
+      <button class="btn-ghost" onclick="reset()">Tentar novamente</button>
+    </div>
+
+  </div>
+
+  <script>
+    const WEBHOOK = 'http://localhost:5678/webhook/podcast-processor';
+
+    const STEPS = [
+      [0,   'Baixando o áudio do YouTube...', 4],
+      [30,  'Comprimindo áudio para transcrição...', 15],
+      [120, 'Transcrevendo com Whisper (Groq)...', 45],
+      [140, 'Gerando resumo detalhado com Claude...', 62],
+      [260, 'Salvando resumo no Notion...', 95],
+    ];
+
+    let timerInterval, startTime;
+
+    const views = ['form', 'loading', 'success', 'error'];
+    function show(name) {
+      views.forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
+    }
+
+    function startProcessing() {
+      const url = document.getElementById('url-input').value.trim();
+      if (!url || !url.includes('youtube')) {
+        document.getElementById('url-input').focus();
+        return;
+      }
+
+      show('loading');
+      startTime = Date.now();
+
+      timerInterval = setInterval(() => {
+        const s = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('timer-text').textContent = s + 's';
+
+        const step = STEPS.filter(([t]) => s >= t).pop() || STEPS[0];
+        document.getElementById('step-text').textContent = step[1];
+        document.getElementById('progress-bar').style.width = Math.min(step[2], 95) + '%';
+      }, 500);
+
+      fetch(WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      })
+      .then(r => {
+        if (!r.ok) return r.json().then(d => { throw new Error(d.message || JSON.stringify(d)); });
+        return r.json();
+      })
+      .then(data => {
+        clearInterval(timerInterval);
+        document.getElementById('progress-bar').style.width = '100%';
+
+        if (data.notion_url) {
+          document.getElementById('notion-link').href = data.notion_url;
+          show('success');
+          setTimeout(() => window.open(data.notion_url, '_blank'), 800);
+        } else {
+          showError('Workflow concluído, mas a URL do Notion não foi retornada.');
+        }
+      })
+      .catch(err => {
+        clearInterval(timerInterval);
+        showError(err.message || 'Falha na conexão com o n8n. Verifique se ele está rodando.');
+      });
+    }
+
+    function showError(rawMsg) {
+      let msg = rawMsg || 'Erro desconhecido.';
+
+      if (msg.includes('429') || msg.includes('too many') || msg.includes('rate') || msg.includes('Rate limit')) {
+        const minutes = (msg.match(/(\d+)m\d+s/) || [])[1];
+        msg = minutes
+          ? `Limite de uso do Groq atingido. Aguarde ${minutes} minutos e tente novamente.`
+          : 'Limite de uso do Groq atingido. Aguarde alguns minutos e tente novamente.';
+      } else if (msg.includes('413') || msg.includes('too large')) {
+        msg = 'Áudio muito grande para transcrever. Tente um vídeo mais curto (menos de 2h).';
+      } else if (msg.includes('fetch') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        msg = 'Não foi possível conectar ao n8n. Verifique se ele está rodando em localhost:5678.';
+      } else if (msg.includes('Error in workflow') || msg.includes('error')) {
+        msg = 'Erro no processamento. Verifique se o vídeo é público e tente novamente.';
+      }
+
+      document.getElementById('error-msg').textContent = msg;
+      show('error');
+    }
+
+    function reset() {
+      document.getElementById('url-input').value = '';
+      show('form');
+      setTimeout(() => document.getElementById('url-input').focus(), 50);
+    }
+
+    document.getElementById('url-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') startProcessing();
+    });
+  </script>
+</body>
+</html>
