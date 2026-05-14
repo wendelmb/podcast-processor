@@ -10,3 +10,6 @@ Desktop.ini
 
 # Node
 node_modules/
+
+# Logs gerados pelos servicos do Windows
+logs/

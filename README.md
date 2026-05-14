@@ -106,6 +106,27 @@ Webhook → Download Audio → Read Audio File → Groq Whisper
 - Envia o conteúdo em lotes de 100 blocos (limite da API do Notion)
 - Formata markdown em blocos Notion: headings, bullets, quotes, dividers, bold, italic
 
+## Serviço do Windows (início automático)
+
+Para que o n8n e a interface iniciem automaticamente a cada login, use os scripts de serviço:
+
+```powershell
+# Instalar (execute como Administrador)
+.\install-service.ps1
+
+# Verificar status
+.\check-services.ps1
+
+# Remover início automático
+.\uninstall-service.ps1
+```
+
+O `install-service.ps1` registra duas tarefas no Task Scheduler do Windows:
+- **PodcastProcessor-n8n** — inicia o n8n em segundo plano
+- **PodcastProcessor-UI** — inicia a interface web em segundo plano
+
+Ambas as tarefas reiniciam automaticamente até 3 vezes (intervalo de 2 min) em caso de falha.
+
 ## Troubleshooting
 
 ### Groq rate limit (429)
