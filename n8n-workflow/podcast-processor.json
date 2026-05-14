@@ -34,7 +34,7 @@
         300
       ],
       "parameters": {
-        "filePath": "C:\\Users\\Admin\\.n8n-files\\podcast.mp3"
+        "filePath": "={{ $json.audioPath }}"
       }
     },
     {
@@ -124,7 +124,7 @@
       ],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst url = $input.item.json.body.url;\n\nif (!url) throw new Error('URL não informada no body');\n\nconst out = 'C:\\\\Users\\\\Admin\\\\.n8n-files\\\\podcast.mp3';\nconst tmp = 'C:\\\\Users\\\\Admin\\\\.n8n-files\\\\podcast_tmp.mp3';\n\n// Download\nexecSync(`yt-dlp -x --audio-format mp3 --audio-quality 0 -o \"${out}\" \"${url}\"`, { stdio: 'inherit' });\n\n// Groq limit = 25 MB. Re-encode to lower bitrate if needed.\nconst sizeMB = fs.statSync(out).size / (1024 * 1024);\nif (sizeMB > 24) {\n  const bitrate = sizeMB > 50 ? '16k' : '32k';\n  execSync(`ffmpeg -y -i \"${out}\" -b:a ${bitrate} -ac 1 \"${tmp}\"`, { stdio: 'inherit' });\n  fs.renameSync(tmp, out);\n}\n\nreturn [{ json: { status: 'downloaded', youtube_url: url } }];"
+        "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst os = require('os');\nconst path = require('path');\nconst url = $input.item.json.body.url;\n\nif (!url) throw new Error('URL não informada no body');\n\nconst audioDir = path.join(os.homedir(), '.n8n-files');\nif (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true });\n\nconst out = path.join(audioDir, 'podcast.mp3');\nconst tmp = path.join(audioDir, 'podcast_tmp.mp3');\n\n// Download\nexecSync(`yt-dlp -x --audio-format mp3 --audio-quality 0 -o \"${out}\" \"${url}\"`, { stdio: 'inherit' });\n\n// Groq limit = 25 MB. Re-encode to lower bitrate if needed.\nconst sizeMB = fs.statSync(out).size / (1024 * 1024);\nif (sizeMB > 24) {\n  const bitrate = sizeMB > 50 ? '16k' : '32k';\n  execSync(`ffmpeg -y -i \"${out}\" -b:a ${bitrate} -ac 1 \"${tmp}\"`, { stdio: 'inherit' });\n  fs.renameSync(tmp, out);\n}\n\nreturn [{ json: { status: 'downloaded', youtube_url: url, audioPath: out } }];"
       }
     },
     {
@@ -217,7 +217,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const fs = require('fs');\ntry { fs.unlinkSync('C:\\\\Users\\\\Admin\\\\.n8n-files\\\\podcast.mp3'); } catch(e) {}\nreturn [{ json: $input.item.json }];"
+        "jsCode": "const fs = require('fs');\nconst os = require('os');\nconst path = require('path');\nconst audioPath = path.join(os.homedir(), '.n8n-files', 'podcast.mp3');\ntry { fs.unlinkSync(audioPath); } catch(e) {}\nreturn [{ json: $input.item.json }];"
       }
     }
   ],
