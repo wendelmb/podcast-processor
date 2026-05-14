@@ -2,6 +2,11 @@
 
 Guia de referência rápida para o Claude Code trabalhar neste projeto.
 
+## Instruções para o Claude Code
+
+- Sempre que fizer uma alteração no projeto (novo nó, novo script, novo limite descoberto, problema resolvido), atualize as seções relevantes deste CLAUDE.md no mesmo commit.
+- Nunca deixe o CLAUDE.md desatualizado em relação ao código que acabou de mudar.
+
 ## O que é este projeto
 
 Automação local que processa podcasts do YouTube e salva um resumo estruturado no Notion.
