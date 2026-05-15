@@ -1,0 +1,191 @@
+{
+  "id": "lounge-cafe-bot-v1",
+  "name": "Lounge Cafe Bot",
+  "nodes": [
+    {
+      "id": "webhook_1",
+      "name": "Webhook Evolution API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lounge-cafe",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "782e0f57-46de-431c-928b-0cd1352046c4"
+    },
+    {
+      "id": "respond_1",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 180],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK"
+      }
+    },
+    {
+      "id": "filter_1",
+      "name": "Ignore Own Messages",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 380],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {"id": "cond1", "leftValue": "={{ $json.data.key.fromMe }}", "rightValue": true, "operator": {"type": "boolean", "operation": "notEquals"}},
+            {"id": "cond2", "leftValue": "={{ $json.event }}", "rightValue": "messages.upsert", "operator": {"type": "string", "operation": "equals"}}
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "logic_1",
+      "name": "Process State Machine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 380],
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\nconst sender = body.data?.key?.remoteJid || '';\nconst phone = sender.replace('@s.whatsapp.net', '').replace('@g.us', '');\nconst messageType = body.data?.messageType || 'conversation';\nconst messageText = (body.data?.message?.conversation || body.data?.message?.extendedTextMessage?.text || '').trim().toLowerCase();\nif (sender.includes('@g.us')) { return [{ json: { skip: true, phone, sender, response: '', isComplete: false, completedOrder: null, isBusinessHours: false } }]; }\nconst now = new Date();\nconst brtHour = (now.getUTCHours() - 3 + 24) % 24;\nconst brtDay = now.getUTCDay();\nlet isOpen = false;\nif (brtDay >= 1 && brtDay <= 5 && brtHour >= 8 && brtHour < 18) isOpen = true;\nif (brtDay === 6 && brtHour >= 8 && brtHour < 12) isOpen = true;\nconst CAFES = [{ name: 'Cafe Premium Suave', price: 69 }, { name: 'Cafe Especial Equilibrado', price: 69 }, { name: 'Cafe Gourmet Classico', price: 57 }, { name: 'Cafe Super Intenso', price: 57 }];\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.conversations) staticData.conversations = {};\nconst conv = staticData.conversations[phone] || { state: 0, order: {} };\nlet state = conv.state;\nlet order = { ...conv.order };\nlet response = '';\nlet nextState = state;\nlet isComplete = false;\nif (messageText === '1' && state !== 1) { state = 0; order = {}; }\nif (state === 0) {\n  response = 'Ola! Bem-vindo a Lounge Cafe!\\n\\nCardapio:\\n1 - Cafe Premium Suave - R$ 69,00\\n2 - Cafe Especial Equilibrado - R$ 69,00\\n3 - Cafe Gourmet Classico - R$ 57,00\\n4 - Cafe Super Intenso - R$ 57,00\\n\\nFarofa - R$ 30,00/unidade\\n\\nDigite o numero do cafe:';\n  nextState = 1;\n} else if (state === 1) {\n  const choice = parseInt(messageText);\n  if (choice >= 1 && choice <= 4) { order.cafe = CAFES[choice - 1]; response = order.cafe.name + ' selecionado!\\nVoce prefere:\\nG - Grao\\nM - Moido\\n\\nDigite G ou M:'; nextState = 2; }\n  else { response = 'Por favor, digite um numero de 1 a 4.'; nextState = 1; }\n} else if (state === 2) {\n  const t = messageText.charAt(0);\n  if (t === 'g') { order.tipo = 'Grao'; }\n  else if (t === 'm') { order.tipo = 'Moido'; }\n  else { staticData.conversations[phone] = { state: 2, order }; return [{ json: { phone, sender, response: 'Digite G para Grao ou M para Moido:', isComplete: false, completedOrder: null, isBusinessHours: isOpen, skip: false } }]; }\n  response = order.tipo + ' selecionado!\\n\\nQuantos pacotes de 500g voce deseja?'; nextState = 3;\n} else if (state === 3) {\n  const qty = parseInt(messageText);\n  if (qty > 0 && qty <= 50) { order.quantidade = qty; response = qty + ' pacote(s) confirmado(s)!\\n\\nDeseja adicionar Farofa? (R$ 30,00/unidade)\\nS - Sim\\nN - Nao'; nextState = 4; }\n  else { response = 'Informe uma quantidade valida (ex: 1, 2, 3...):'; nextState = 3; }\n} else if (state === 4) {\n  const t = messageText.charAt(0);\n  if (t === 's') { order.farofa = 0; response = 'Quantas unidades de farofa deseja?'; nextState = 45; }\n  else if (t === 'n') { order.farofa = 0; order.total = order.cafe.price * order.quantidade; order.produtos = order.cafe.name + ' (' + order.tipo + ') x' + order.quantidade; response = 'RESUMO DO PEDIDO\\n\\n' + order.produtos + '\\nTotal: R$ ' + order.total + ',00\\n\\nQual e o seu nome completo?'; nextState = 5; }\n  else { response = 'Digite S para Sim ou N para Nao:'; nextState = 4; }\n} else if (state === 45) {\n  const qty = parseInt(messageText);\n  if (qty > 0 && qty <= 20) { order.farofa = qty; order.total = (order.cafe.price * order.quantidade) + (qty * 30); order.produtos = order.cafe.name + ' (' + order.tipo + ') x' + order.quantidade + ' + Farofa x' + qty; response = 'RESUMO DO PEDIDO\\n\\n' + order.produtos + '\\nTotal: R$ ' + order.total + ',00\\n\\nQual e o seu nome completo?'; nextState = 5; }\n  else { response = 'Informe uma quantidade valida:'; nextState = 45; }\n} else if (state === 5) {\n  order.nome = messageText.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');\n  const fora = !isOpen ? '\\n\\nEstamos fora do horario comercial. Confirmaremos na abertura.' : '';\n  response = 'Perfeito, ' + order.nome + '!\\n\\nPAGAMENTO VIA PIX\\nChave: (19) 998972667\\nBeneficiario: Ednea Cristina\\nValor: R$ ' + order.total + ',00\\n\\nApos o PIX, envie o comprovante aqui para confirmarmos.' + fora; nextState = 6;\n} else if (state === 6) {\n  const isReceipt = ['imageMessage','documentMessage','image','document'].includes(messageType);\n  if (isReceipt) { const confirmMsg = isOpen ? 'Em breve seu pedido estara pronto!' : 'Confirmaremos assim que abrirmos!'; response = 'Comprovante recebido!\\n\\n' + confirmMsg + '\\n\\nObrigado!\\n\\nDigite 1 para novo pedido.'; isComplete = true; nextState = 0; }\n  else { response = 'Por favor, envie o comprovante do PIX (foto ou PDF).'; nextState = 6; }\n} else { response = 'Nao entendi. Digite 1 para iniciar.'; }\nconst completedOrder = isComplete ? { ...conv.order, nome: order.nome } : null;\nstaticData.conversations[phone] = { state: isComplete ? 0 : nextState, order: isComplete ? {} : order };\nreturn [{ json: { phone, sender, response, isComplete, completedOrder, isBusinessHours: isOpen, skip: false } }];"
+      }
+    },
+    {
+      "id": "skip_filter",
+      "name": "Skip Groups",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [920, 380],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {"id": "skip1", "leftValue": "={{ $json.skip }}", "rightValue": true, "operator": {"type": "boolean", "operation": "notEquals"}}
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "send_msg",
+      "name": "Send WhatsApp Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://145.79.7.215:8080/message/sendText/lounge-cafe",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "loungecafe2026secret"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "number": "={{ $json.phone }}",
+          "text": "={{ $json.response }}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "is_complete",
+      "name": "Order Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1360, 300],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {"id": "comp1", "leftValue": "={{ $('Process State Machine').first().json.isComplete }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}}
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "prepare_order",
+      "name": "Prepare Order Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1580, 220],
+      "parameters": {
+        "jsCode": "const botData = $('Process State Machine').first().json;\nconst order = botData.completedOrder || {};\nconst now = new Date();\nconst brt = new Date(now.getTime() - 3 * 60 * 60 * 1000);\nconst timestamp = brt.toLocaleString('pt-BR');\nconst isOpen = botData.isBusinessHours;\nconst fora = isOpen ? '' : ' FORA DO HORARIO';\nreturn [{ json: { timestamp, nome: order.nome || '', phone: botData.phone, produtos: order.produtos || '', total: order.total || 0, pix: 'Comprovante recebido', status: 'Aguardando confirmacao', obs: fora, notifyMsg: 'Novo Pedido!' + fora + '\\n\\nCliente: ' + order.nome + '\\nWhatsApp: ' + botData.phone + '\\nPedido: ' + order.produtos + '\\nTotal: R$ ' + order.total + ',00' }}];"
+      }
+    },
+    {
+      "id": "save_sheets",
+      "name": "Save Order to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1800, 160],
+      "parameters": {
+        "operation": "append",
+        "documentId": {"__rl": true, "value": "COLE_O_ID_DA_PLANILHA_AQUI", "mode": "id"},
+        "sheetName": {"__rl": true, "value": "Pedidos", "mode": "name"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Nome": "={{ $json.nome }}",
+            "WhatsApp": "={{ $json.phone }}",
+            "Produtos": "={{ $json.produtos }}",
+            "Total": "={{ $json.total }}",
+            "PIX": "={{ $json.pix }}",
+            "Status": "={{ $json.status }}",
+            "Obs": "={{ $json.obs }}"
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "notify_store",
+      "name": "Notify Store WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1800, 320],
+      "parameters": {
+        "method": "POST",
+        "url": "http://145.79.7.215:8080/message/sendText/lounge-cafe",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "loungecafe2026secret"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "number": "5511970957327",
+          "text": "={{ $json.notifyMsg }}"
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Evolution API": {"main": [[{"node": "Respond 200", "type": "main", "index": 0}], [{"node": "Ignore Own Messages", "type": "main", "index": 0}]]},
+    "Ignore Own Messages": {"main": [[{"node": "Process State Machine", "type": "main", "index": 0}], []]},
+    "Process State Machine": {"main": [[{"node": "Skip Groups", "type": "main", "index": 0}]]},
+    "Skip Groups": {"main": [[{"node": "Send WhatsApp Message", "type": "main", "index": 0}], []]},
+    "Send WhatsApp Message": {"main": [[{"node": "Order Complete?", "type": "main", "index": 0}]]},
+    "Order Complete?": {"main": [[{"node": "Prepare Order Data", "type": "main", "index": 0}], []]},
+    "Prepare Order Data": {"main": [[{"node": "Save Order to Google Sheets", "type": "main", "index": 0}, {"node": "Notify Store WhatsApp", "type": "main", "index": 0}]]}
+  },
+  "settings": {
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "staticData": null
+}

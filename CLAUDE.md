@@ -138,3 +138,145 @@ O arquivo `n8n-workflow/podcast-processor.json` no repositório usa placeholders
 **Título "Podcast Processado" no Notion** → Claude não gerou a seção `FRASE DO EPISÓDIO` no formato esperado. Checar o nó "Claude Synthesis" e o prompt do sistema.
 
 **Temas não populados no Notion** → regex `\*\*TEMAS DISCUTIDOS[^*]*\*\*` no nó "Save to Notion" não encontrou a seção. Verificar a saída do Claude.
+
+---
+
+# CLAUDE.md — Lounge Café Bot
+
+## O que é este projeto
+
+Bot de atendimento WhatsApp para a Lounge Café (loja física em Araras/SP, da Ednea Cristina, sogra do Wendel).
+O bot apresenta o cardápio, guia o cliente por um fluxo de pedido e notifica a loja.
+
+Fluxo: WhatsApp → Evolution API → n8n webhook → máquina de estados → resposta WhatsApp + Google Sheets + notificação loja.
+
+Stack: **Evolution API v2** (WhatsApp), **n8n** (orquestração), **Docker** no VPS Hostinger KVM 2.
+
+## Estrutura de arquivos
+
+```
+lounge-cafe-bot/
+├── n8n-workflow/
+│   └── lounge-cafe-bot.json   # workflow exportado (fonte da verdade)
+└── vps/
+    ├── docker-compose.yml     # 4 serviços: evolution-api, n8n, postgres, redis
+    └── setup-vps.sh           # instala Docker no Ubuntu 24.04
+```
+
+## VPS e infraestrutura
+
+| Item | Valor |
+|------|-------|
+| Provider | Hostinger KVM 2 |
+| IP | `145.79.7.215` |
+| OS | Ubuntu 24.04 |
+| SSH key | `C:\Users\Admin\.ssh\lounge_cafe_vps` |
+| Acesso SSH | `ssh -i C:\Users\Admin\.ssh\lounge_cafe_vps root@145.79.7.215` |
+| Compose dir | `/opt/lounge-cafe/` |
+
+## Serviços Docker no VPS
+
+| Serviço | Porta | URL |
+|---------|-------|-----|
+| Evolution API | 8080 | http://145.79.7.215:8080 |
+| n8n | 5678 | http://145.79.7.215:5678 |
+| PostgreSQL | 5432 (interno) | banco da Evolution API |
+| Redis | 6379 (interno) | cache da Evolution API |
+
+**API Key Evolution**: `loungecafe2026secret`
+
+## n8n no VPS
+
+- **Workflow ID**: `lounge-cafe-bot-v1`
+- **Webhook**: `POST http://145.79.7.215:5678/webhook/lounge-cafe`
+- **Status**: inativo (ativar apenas quando tiver número WhatsApp dedicado)
+
+**Nós do workflow** (em ordem):
+1. `Webhook Evolution API` — recebe eventos do WhatsApp
+2. `Respond 200` — resposta imediata (paralela)
+3. `Ignore Own Messages` — filtra fromMe e event≠messages.upsert
+4. `Process State Machine` — Code node com toda a lógica do bot (7 estados)
+5. `Skip Groups` — ignora mensagens de grupos
+6. `Send WhatsApp Message` — HTTP POST para Evolution API
+7. `Order Complete?` — IF verifica se pedido foi confirmado
+8. `Prepare Order Data` — formata dados para Sheets e notificação
+9. `Save Order to Google Sheets` — registra pedido (requer credencial OAuth2)
+10. `Notify Store WhatsApp` — envia alerta para `5511970957327`
+
+## Máquina de estados (7 estados)
+
+| Estado | Descrição |
+|--------|-----------|
+| 0 | Saudação + cardápio |
+| 1 | Escolha do café (1-4) |
+| 2 | Tipo: G=Grão / M=Moído |
+| 3 | Quantidade de pacotes |
+| 4 | Farofa? S/N |
+| 45 | Quantidade de farofa |
+| 5 | Nome do cliente + dados PIX |
+| 6 | Aguarda comprovante PIX |
+
+**Reiniciar pedido**: digitar `1` em qualquer estado ≠ 1.
+
+**Estado persistido em**: `staticData` do n8n (in-memory por execução do workflow no VPS).
+
+## Cardápio e preços
+
+| Produto | Preço |
+|---------|-------|
+| Café Premium Suave (500g) | R$ 69,00 |
+| Café Especial Equilibrado (500g) | R$ 69,00 |
+| Café Gourmet Clássico (500g) | R$ 57,00 |
+| Café Super Intenso (500g) | R$ 57,00 |
+| Farofa | R$ 30,00/unidade |
+
+**Chave PIX**: `(19) 998972667` — Beneficiária: Ednea Cristina
+
+## Horário de funcionamento (BRT)
+
+- Segunda a Sexta: 08h–18h
+- Sábado: 08h–12h
+- Fora do horário: bot menciona que confirmarão na abertura
+
+## Evolution API: instância WhatsApp
+
+- **Nome da instância**: `lounge-cafe`
+- **Status**: desconectada (aguardando número dedicado)
+- **Webhook configurado**: `MESSAGES_UPSERT` → `http://145.79.7.215:5678/webhook/lounge-cafe`
+- **QR Code**: gerar via Manager UI em http://145.79.7.215:8080/manager ou via pairing code
+
+Para conectar número:
+```bash
+# Pairing code (alternativa ao QR)
+curl -X POST 'http://145.79.7.215:8080/instance/pairingCode/lounge-cafe' \
+  -H 'apikey: loungecafe2026secret' \
+  -H 'Content-Type: application/json' \
+  -d '{"phoneNumber": "5519XXXXXXXXX"}'
+```
+
+## Google Sheets (pendente configuração)
+
+1. Criar planilha com aba "Pedidos" e colunas: Timestamp, Nome, WhatsApp, Produtos, Total, PIX, Status, Obs
+2. Compartilhar com a conta de serviço Google
+3. Configurar credencial OAuth2 no n8n do VPS
+4. Atualizar o ID da planilha no nó "Save Order to Google Sheets" (atualmente `COLE_O_ID_DA_PLANILHA_AQUI`)
+
+## Importar/atualizar workflow no VPS
+
+```powershell
+# Gerar JSON base64 e importar via SSH (sem escrita em disco local)
+$b64 = (python-script-que-gera-json) | python
+$b64 | ssh -i C:\Users\Admin\.ssh\lounge_cafe_vps root@145.79.7.215 "tr -d '\r\n' | base64 -d > /tmp/wf.json && docker cp /tmp/wf.json n8n:/tmp/wf.json && docker exec n8n n8n import:workflow --input=/tmp/wf.json"
+```
+
+## Problemas conhecidos e soluções
+
+**QR code não renderiza na UI do Evolution Manager** → bug do browser; usar pairing code como alternativa.
+
+**n8n "secure cookie" error** → adicionar `N8N_SECURE_COOKIE=false` no docker-compose e recriar container: `docker compose up --force-recreate -d n8n`.
+
+**Evolution API crashando** → verificar se PostgreSQL e Redis estão rodando; a API depende dos dois.
+
+**`cat: command not found` no terminal Hostinger** → PATH incompleto; usar `python3` para escrever arquivos ou `nano` para editar.
+
+**Heredoc não funciona no Bash tool do Claude Code** → usar PowerShell com `@'...'@` (heredoc single-quoted) + pipe para `python` local.
