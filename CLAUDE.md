@@ -195,30 +195,35 @@ lounge-cafe-bot/
 1. `Webhook Evolution API` — recebe eventos do WhatsApp
 2. `Respond 200` — resposta imediata (paralela)
 3. `Ignore Own Messages` — filtra fromMe e event≠messages.upsert
-4. `Process State Machine` — Code node com toda a lógica do bot (7 estados)
-5. `Skip Groups` — ignora mensagens de grupos
+4. `AI Processor` — Code node com 3 camadas de guardrail + chamada Claude Haiku
+5. `Skip Groups` — ignora mensagens de grupos (já tratado no AI Processor, mas mantido como segurança)
 6. `Send WhatsApp Message` — HTTP POST para Evolution API
-7. `Order Complete?` — IF verifica se pedido foi confirmado
+7. `Order Complete?` — IF verifica `isComplete` do AI Processor
 8. `Prepare Order Data` — formata dados para Sheets e notificação
-9. `Save Order to Google Sheets` — registra pedido (requer credencial OAuth2)
+9. `Save Order to Google Sheets` — registra pedido (credencial `google-sheets-lounge-cafe`)
 10. `Notify Store WhatsApp` — envia alerta para `5511970957327`
 
-## Máquina de estados (7 estados)
+## Arquitetura do AI Processor (3 camadas)
 
-| Estado | Descrição |
-|--------|-----------|
-| 0 | Saudação + cardápio |
-| 1 | Escolha do café (1-4) |
-| 2 | Tipo: G=Grão / M=Moído |
-| 3 | Quantidade de pacotes |
-| 4 | Farofa? S/N |
-| 45 | Quantidade de farofa |
-| 5 | Nome do cliente + dados PIX |
-| 6 | Aguarda comprovante PIX |
+O bot usa **Claude Haiku** (`claude-haiku-4-5-20251001`) como motor conversacional com guardrails em 3 camadas:
 
-**Reiniciar pedido**: digitar `1` em qualquer estado ≠ 1.
+**Camada 1 — Pré-filtro** (antes de chamar a IA):
+- Detecta 15 padrões de prompt injection (regex)
+- Bloqueia usuários marcados como abusivos
+- Limite de 400 caracteres por mensagem
 
-**Estado persistido em**: `staticData` do n8n (in-memory por execução do workflow no VPS).
+**Camada 2 — Claude Haiku** (via `$helpers.httpRequest`):
+- System prompt com: persona Lara, cardápio com preços fixos, fluxo de 9 etapas, 10 regras absolutas
+- Estado do pedido injetado no system prompt: `conv.orderState`
+- Retorna JSON: `{response, orderState, isComplete, completedOrder, flags}`
+- Histórico: últimas 10 trocas (20 mensagens) em `staticData`
+
+**Camada 3 — Pós-validação**:
+- Valida preços na resposta (só aceita R$ 57, 69 ou 30)
+- Contador de abuso: bloqueia após 2 flags `abusive`
+- Gerencia histórico e `orderState` no `staticData`
+
+**Estado persistido em**: `staticData.conversations[phone]` com `{history, abusiveCount, blocked, orderState}`.
 
 ## Cardápio e preços
 
