@@ -4,6 +4,9 @@
 # MCP server config (contains API keys)
 .mcp.json
 
+# Credenciais locais da infraestrutura
+infra/vps-secrets.env
+
 # Windows
 Thumbs.db
 Desktop.ini
